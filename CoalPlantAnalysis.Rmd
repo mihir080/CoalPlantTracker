@@ -1,0 +1,352 @@
+---
+title: "Analysis Of Global Coal Power Plants"
+author: "Mihir"
+date: "`r Sys.Date()`"
+output: html_document
+---
+
+```{r setup, include=FALSE}
+knitr::opts_chunk$set(echo = FALSE)
+```
+<div style="text-align: justify;">
+<div style="line-height: 1.5;">
+
+### Overview
+
+This analysis aims to evaluate changes in the global coal power using data from the Global Energy Monitor’s Global Coal Plant Tracker database. The database provides a comprehensive collection of variables for individual coal-fired power projects worldwide, tracking their status over time from early development stages to construction, operation, and retirement.
+
+The analysis takes a comprehensive look at Coal Power Plants on a country-by-country basis, assessing how their capacities have evolved between 2017 and 2023. By doing so, it endeavors to uncover overarching patterns and significant shifts in the global landscape. Additionally, it delves into the actions of key players that have notably influenced coal production capacity on a global scale during this timeframe. 
+
+Furthermore, it provides a cursory examination of upcoming projects and those that have been cancelled across various countries, aiming to discern any noticeable changes in trends over the specified period.
+
+### Process And Steps Taken
+
+<br>
+
+1. **Package Installation**: Necessary R packages are installed to facilitate data manipulation, visualization, and analysis.
+
+2. **Data Loading:** Two datasets, representing coal power plant information for 2017 and 2023 respectively, are loaded into the R environment.
+
+3. **Data Preprocessing:** The datasets are cleaned and restructured to include relevant variables for analysis.
+
+4. **Country-level Analysis:**
+
+    - The datasets are combined to create a unified dataset for analysis.
+
+    - Key variables such as plant capacity, emissions, and operational status are aggregated by country for both years.
+
+5. **Visualization:**
+
+    - Total global capacity changes between 2017 and 2023 are visualized using bar plots.
+
+    - Changes in operating capacity and the number of power plants by country are visualized to identify major contributors.
+
+    - The status of power plants under development and those cancelled are visualized to understand ongoing trends.
+
+6. **CO2 Emissions Mapping:**
+
+    - World maps are generated to visualize CO2 emissions by country for both 2017 and 2023.
+
+    - Separate maps are created to visualize emissions without outliers to provide clearer insights.
+    
+<br>
+
+*Further details about packages used provided in the Readme file*
+
+<br>
+
+### Data Visualizations And Analysis
+
+```{r pressure, echo=FALSE, include=FALSE}
+#Installing the required packages for a brief analysis
+packages <- c('readr', 'tidyverse', 'ggplot2', 'ggtext', 'tidytext', 
+              'ggthemes', 'broom', 'knitr', 'plotly', 'sf', 
+              "rnaturalearthdata", 'rnaturalearth', 'readxl', 'xts', 
+              'reshape2', "writexl")
+
+#install all packages that are not already installed
+install.packages(setdiff(packages, rownames(installed.packages())))
+
+# Loading all packages as required
+for (pkg in packages){
+  library(pkg, character.only = TRUE)
+}
+
+dataset_country <- read_excel("FinalDataset.xlsx")
+```
+
+##### Total Global Capacity And Power Plants
+
+The total global capacity of coal power plants has experienced a notable increase from 2017 to 2023. This surge can be attributed to a confluence of factors driving demand for coal-generated electricity. One significant contributor is the steady rise in global population over this period, translating to heightened energy needs for residential, commercial, and industrial purposes. 
+
+Industrial energy corporations, in particular, have propelled this growth, relying heavily on coal as a primary source of power for manufacturing processes and operations. Additionally, economic development in emerging markets has spurred the construction of new coal-fired plants to meet escalating energy demands, especially in regions undergoing rapid industrialization.
+
+```{r, echo=FALSE}
+total_capacity <- dataset_country %>% 
+  
+  #Selecting relevatn columns
+  select(Country, Capacity_2017, Capacity_2023, PowerPlants_2017, 
+         PowerPlants_2023) %>%
+  
+  #Summarising to identify totals
+  summarise(Capacity_2017 = sum(Capacity_2017, na.rm = TRUE), 
+            Capacity_2023 = sum(Capacity_2023, na.rm = TRUE), 
+            PowerPlants_2017 = sum(PowerPlants_2017, na.rm = TRUE),
+            PowerPlants_2023 = sum(PowerPlants_2023, na.rm = TRUE))
+
+print(total_capacity)
+```
+<br>
+
+We see an increase of nearly 15% in number of power plants that exist globally and an increase of nearly 14% in the total coal power capacity as well. Despite growing awareness of environmental concerns associated with coal usage, such as greenhouse gas emissions and air pollution, the allure of coal's affordability and reliability has sustained its dominance in the energy landscape.
+
+<br>
+
+```{r, echo = FALSE, warning=FALSE, message=FALSE}
+#Creating a dataset for plotting
+plot_total <- total_capacity %>% 
+  pivot_longer(cols = starts_with("Capacity"), 
+               names_to = "Year", 
+               values_to = "Total_Capacity")
+
+#Creating a preliminary plot to identify overall global trend
+ggplot(plot_total, aes(x = Year, y = Total_Capacity)) +
+  geom_bar(stat = "identity", width = 0.25, fill = "#00CED1") +
+  labs(title = "Total Global Capacity (2017 vs. 2023)",
+       x = "Year", y = "Total Capacity (MW)",
+       fill = "Year") +
+  theme_minimal() +
+  scale_y_continuous(breaks = seq(0, max(plot_total$Total_Capacity), 
+                                  by = 1000000), labels = scales::comma)
+```
+
+<br> 
+
+##### Changes in Operating Capacity
+
+<br>
+
+Given this global change in Capacity and Number of Power Plants, let us know focus on the individual country breakdown, to identify the biggest players that have caused a change. 
+
+<br>
+
+```{r, echo=FALSE, warning=FALSE, message=FALSE}
+## Changes in Operating Capacity
+
+# Creating a dataset with major identifiable changes by country
+majorchanges <- dataset_country %>% 
+  
+  # Removing countries with no change in capacity (Can increase capacity in 
+  #existing plants, hence sorted by capacity)
+  filter(Capacity_2017 != Capacity_2023) %>%
+  
+  #Adding a variable to identify addition or retirement by capacity
+  mutate(CapacityChg = (Capacity_2023 - Capacity_2017)) %>%
+  
+  #Adding a variable to identify addition or retirement by number of 
+  #power plants
+  mutate(PlantsChg = (PowerPlants_2023 - PowerPlants_2017)) %>% 
+  arrange(CapacityChg)
+
+#Creating plot datas
+plot_capacitychg <- majorchanges %>% 
+  #Reverifying the change variable
+  filter(CapacityChg != 0) %>%
+  filter(Country != "China") %>% 
+  #Keeping change more than 10% to identify major contributors
+  filter(CapacityChg > 5000 | CapacityChg < 0)
+
+plot_plantchg <- majorchanges %>% 
+  #Reverifying the change variable
+  filter(PlantsChg != 0)
+
+plot_plantchg_noout <- majorchanges %>% 
+  #Reverifying the change variable
+  filter(PlantsChg < 0 | PlantsChg > 10 ) %>% 
+  filter(Country != "China") 
+
+#Plotting the change in capacity
+ggplot(plot_capacitychg, aes(x = CapacityChg, y = Country)) +
+  geom_bar(stat = "identity", fill = "#00CED1") +
+  labs(title = "Capacity Change (2017 vs. 2023) by Country",
+       x = "Country", y = "Capacity Change") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) 
+```
+
+<br>
+
+From the graph above we can see that purely in terms of capacity, the biggest reduction has been from the Central Asian country of Kyrgyzstan. Other countries like South Africa and Peru also show a reduction, even though it may not be of the same scale. 
+
+Developing nations like India, Indonesia, and Bangladesh have collectively augmented their coal power capacity by over 20,000 MW during this period. This surge can be attributed to a strong focus on industrial development. In India, initiatives like "Make in India" have fueled industrial growth, demanding reliable energy sources, with coal emerging as the preferred option due to its abundance and affordability. 
+
+Similarly, rapid industrialization in Indonesia and Bangladesh has driven the need for stable energy infrastructure, with coal power plants meeting these demands efficiently. Despite environmental concerns, the imperative for economic growth has propelled the expansion of coal power in these nations.
+
+<br>
+
+```{r, echo=FALSE, warning=FALSE, include=FALSE}
+#Plotting the change in number of plants
+ggplot(plot_plantchg, aes(x = PlantsChg, y = Country)) +
+  geom_bar(stat = "identity", fill = "#00CED1") +
+  labs(title = "Number of Power Plants Change (2017 vs. 2023) by Country",
+       x = "Country", y = "Change in Number of Power Plants") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) 
+```
+
+```{r, echo=FALSE, warning=FALSE}
+#Plotting the change in number of plants
+ggplot(plot_plantchg_noout, aes(x = PlantsChg, y = Country)) +
+  geom_bar(stat = "identity", fill = "#00CED1") +
+  labs(title = "Number of Power Plants Change (2017 vs. 2023) by Country",
+       x = "Country", y = "Change in Number of Power Plants") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) 
+
+```
+
+<br>
+
+We can further see that this is corrorboarted by an increase in net number of Coal Power plants in the above identified regions as well. 
+
+We can further see that there is strong push from the European region. especially Eastern Europe to shift towards cleaner sources of energy. With the net number of Coal Power plants reducing from 2017 to 2023 in Serbia, Romania, Poland, Netherlands, Croatia and Bulgaria. 
+
+<br>
+
+_Note: For the purpose of these charts, **China** has been exlcuded as an outlier to better visualise the data. A more granular graph is included in the script that shows percentage change in capacity as well._
+
+<br>
+
+##### Power Plants Under Development And Retired
+
+<br> 
+
+We have established as of now that there has been an increase in terms of production capacity and number of power plants, but we are also seeing a shift in ideology with countried opting to reduce the number of power plants. 
+
+Let us see the if the shift in trend is significant enough to sustain. 
+
+<br>
+
+```{r, echo=FALSE, warning=FALSE, fig.width=14, fig.height=6, out.width='100%'}
+# Power Plants under development
+# Creating a dataset to idetnify the total number of power plants 
+# under development
+majorchanges <- majorchanges %>% 
+  
+  #Creating a combined variable _ for under development in 2017
+  mutate(UnderDev_17 = Permitted_2017 + PrePermit_2017 + 
+           Announced_2017 + Construction_2017) %>% 
+  
+  #Creating a combined variable _ for under development in 2023
+  mutate(UnderDev_23 = Permitted_2023 + PrePermit_2023 + 
+           Announced_2023 + Construction_2023) %>% 
+  
+  #Creating a combined variable _ for deactivated / closed in 2017
+  mutate(TotalCancelled_17 = Shelved_2017 + Retired_2017 + Cancelled_2017) %>% 
+  
+  #Creating a combined variable _ for deactivated / closed in 2023
+  mutate(TotalCancelled_23 = Shelved_2023 + Retired_2023 + Cancelled_2023 +
+           Deactivated_2023)
+
+#Creating plot data for under development and cancelled plants
+plot_data_uc <- majorchanges %>%
+  select(Country, UnderDev_17, UnderDev_23, TotalCancelled_17, 
+         TotalCancelled_23) %>% 
+  filter(UnderDev_17 != 0 | UnderDev_23 != 0) %>%
+  pivot_longer(cols = starts_with("Under"), 
+               names_to = "UnderDev", 
+               values_to = "Count") %>% 
+  pivot_longer(cols = starts_with("Total"), 
+               names_to = "Cancelled", 
+               values_to = "Count_Can")
+
+#Plotting the under development plants (as a total percentage)  
+ggplot(plot_data_uc, aes(x = Country, y = Count, fill = UnderDev)) +
+  geom_bar(position = "fill", stat = "identity") +
+  labs(title = "Plants Under Development by Country",
+       x = "Country", y = "Plants Under Development") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  theme(legend.position = "bottom")
+
+#Plotting the cancelled plants (as a total percentage)
+ggplot(plot_data_uc, aes(x = Country, y = Count_Can, fill = Cancelled)) +
+  geom_bar(position = "fill", stat = "identity") +
+  labs(title = "Plants Cancelled by Country",
+       x = "Country", y = "Plants Cancelled") +
+  theme_minimal() +
+  theme(axis.text.x = element_text(angle = 90, vjust = 0.5, hjust = 1)) +
+  theme(legend.position = "bottom")
+```
+
+<br>
+
+The visualization indicates a significant global shift in ideology. 
+
+It reveals a discernible decline in the number of newly commissioned and constructed coal power plants worldwide. This trend carries implications for future power generation capabilities. With fewer new plants coming online, there's a prospect of diminished options for meeting escalating energy demands.
+
+While certain outliers, particularly in Central Asia and Africa, exhibit a higher proportion of newly commissioned coal power plants in 2023, this can largely be attributed to the cost-effectiveness and ready availability of coal as an energy source in these regions.
+
+Moreover, the visualization highlights a trend of increased retirements or cancellations of coal power plants compared to 2017. This suggests a concerted effort to phase out older and less efficient coal-fired facilities, likely driven by environmental concerns, regulatory pressures, and shifting market dynamics.
+
+In summary, the observed shifts in coal power plant commissioning, construction, and retirement underscore a broader global transition towards cleaner and more sustainable energy systems. 
+
+<br>
+
+##### Visualizing The CO2 Emissions
+
+<br>
+
+Finally, we will visualize the impact of the Coal Power Plants in terms of CO2 Production in 2023. 
+
+<br>
+
+```{r, echo=FALSE, fig.width=14, fig.height=6, out.width='100%'}
+#Creating a world map dataset
+world_map <- ne_countries(scale = "medium", returnclass = "sf")
+
+#Creating a dataset for Annual Co2 emissions _ without outliers
+CO2_Country_out <- dataset_country %>% 
+  select(Country, AnnualCO2_2017, AnnualCO2_2023) %>% 
+  filter(AnnualCO2_2017 < 1000)
+
+#Creating a plot dataset for Annual Co2 emissions _ without outliers
+plot_data_Co3 <- merge(world_map, CO2_Country_out, by.x = "name", 
+                       by.y = "Country", all.x = TRUE)
+
+#Plotting for 2023 _ without outliers
+ggplot() +
+  geom_sf(data = plot_data_Co3, aes(fill = AnnualCO2_2023)) +
+  scale_fill_gradient(low = "lightblue", high = "darkred", name = 
+                        "CO2 Emissions") +
+  labs(title = "CO2 Emissions by Country (Without Outliers)") +
+  theme_void() 
+
+##_____________________________________________________##
+
+```
+
+
+_Note: For the purpose of this graph, only the Annual CO2 from 2023 has been included, and countries with emission above 1000 have been left out as outliers. The R script has all relevant plots inclduing the outliers._
+
+<br>
+
+The map reinforces our earlier observations by visually representing the distribution of CO2 output from coal power plants across different regions. In Southeast Asia, we observe a higher concentration of CO2 emissions, which aligns with the increased capacity and number of coal plants in the region. Indonesia's reliance on coal as a primary energy source contributes significantly to its CO2 emissions output.
+
+Conversely, the European region exhibits relatively lower CO2 output from coal power plants. This contrasts with regions like Southeast Asia and reflects the European Union's concerted efforts to transition towards renewable energy sources and reduce dependence on coal. 
+
+Policies promoting renewable energy, stringent emissions regulations, and investments in cleaner technologies have collectively contributed to the reduction in CO2 emissions from coal power plants in Europe.
+
+Overall, the map provides a visual representation of regional variations in CO2 emissions from coal power generation, underscoring the divergent approaches and priorities of different regions towards addressing climate change and transitioning to more sustainable energy systems.
+
+<br>
+
+##### Summary
+
+<br>
+
+The analysis of global coal power trends from 2017 to 2023 reveals a significant increase in total capacity and number of power plants, driven by population growth and industrial development, particularly in developing nations. However, reductions in coal power capacity are observed in certain regions, with Eastern European countries leading a shift towards cleaner energy sources. Overall, there's a global trend away from coal power, evidenced by declining commissioning and construction of new plants, reflecting a broader transition towards cleaner energy systems.
+
+</div>
+</div>
+
